@@ -1,10 +1,12 @@
 #!/bin/bash
 
 SetToolPaths() {
+    local MPath="./resources/libimobiledevice_"
     if [[ $OSTYPE == "linux"* ]]; then
         . /etc/os-release 2>/dev/null
         platform="linux"
         platformver="$PRETTY_NAME"
+        MPath+="$platform"
     
         bspatch="$(which bspatch)"
         futurerestore1="sudo LD_PRELOAD=./resources/lib/libcurl.so.3 LD_LIBRARY_PATH=./resources/lib ./resources/tools/futurerestore1_linux"
@@ -14,10 +16,19 @@ SetToolPaths() {
         ipwndfu="sudo $python ipwndfu"
         rmsigchks="sudo $python rmsigchks.py"
         SimpleHTTPServer="sudo -b $python -m SimpleHTTPServer 80"
+        tsschecker2="env LD_PRELOAD=./resources/lib/libcurl.so.3 LD_LIBRARY_PATH=./resources/lib ./resources/tools/tsschecker2_linux"
     
     elif [[ $OSTYPE == "darwin"* ]]; then
         platform="macos"
         platformver="${1:-$(sw_vers -productVersion)}"
+        MPath+="$platform"
+        if [[ -e /usr/local/bin/idevicedate && -e /usr/local/bin/irecovery ]]; then
+            Log "Detected libimobiledevice and libirecovery installed from Homebrew (Intel Mac)"
+            MPath="/usr/local/bin"
+        elif [[ -e /opt/homebrew/bin/idevicedate && -e /opt/homebrew/bin/irecovery ]]; then
+            Log "Detected libimobiledevice and libirecovery installed from Homebrew (Apple Silicon)"
+            MPath="/opt/homebrew/bin"
+        fi
     
         bspatch="/usr/bin/bspatch"
         futurerestore1="./resources/tools/futurerestore1_macos"
@@ -28,13 +39,14 @@ SetToolPaths() {
         ipwndfu="$python ipwndfu"
         rmsigchks="$python rmsigchks.py"
         SimpleHTTPServer="$python -m SimpleHTTPServer 80"
+        tsschecker2="./resources/tools/tsschecker2_macos"
     fi
     git="$(which git)"
-    ideviceenterrecovery="./resources/libimobiledevice_$platform/ideviceenterrecovery"
-    ideviceinfo="./resources/libimobiledevice_$platform/ideviceinfo"
-    iproxy="./resources/libimobiledevice_$platform/iproxy"
+    ideviceenterrecovery="$MPath/ideviceenterrecovery"
+    ideviceinfo="$MPath/ideviceinfo"
+    iproxy="$MPath/iproxy"
     ipsw="./tools/ipsw_$platform"
-    irecoverychk="./resources/libimobiledevice_$platform/irecovery"
+    irecoverychk="$MPath/irecovery"
     irecovery="$irecoverychk"
     [[ $platform == "linux" ]] && irecovery="sudo LD_LIBRARY_PATH=./resources/lib $irecovery"
     partialzip="./resources/tools/partialzip_$platform"
@@ -96,16 +108,16 @@ InstallDepends() {
         ln -sf /usr/lib/libzip.so.5 ../resources/lib/libzip.so.4
     
     elif [[ ! -z $UBUNTU_CODENAME && $VERSION_ID == "2"* ]] ||
-         [[ $PRETTY_NAME == "Debian GNU/Linux bullseye/sid" ]]; then
+         [[ $VERSION == "11 (bullseye)" || $PRETTY_NAME == "Debian"*"sid" ]]; then
         [[ ! -z $UBUNTU_CODENAME ]] && sudo add-apt-repository -y universe
         sudo apt update
-        sudo apt install -y bsdiff curl git libimobiledevice6 openssh-client python2 usbmuxd usbutils
+        sudo apt install -y bsdiff curl git libimobiledevice6 openssh-client python2 unzip usbmuxd usbutils
         SavePkg
         cp libcrypto.so.1.0.0 libcurl.so.3 libpng12.so.0 libssl.so.1.0.0 ../resources/lib
-        if [[ $PRETTY_NAME == "Debian GNU/Linux bullseye/sid" || $VERSION_ID != "20"* ]]; then
-            sudo apt install -y libzip4
-        else
+        if [[ $VERSION_ID == "20"* ]]; then
             cp libzip.so.4 ../resources/lib
+        else
+            sudo apt install -y libzip4
         fi
     
     elif [[ $ID == "fedora" ]] && (( $VERSION_ID >= 33 )); then
@@ -128,6 +140,10 @@ InstallDepends() {
     elif [[ $platform == "macos" ]]; then
         xcode-select --install
         libimobiledevice=("https://github.com/libimobiledevice-win32/imobiledevice-net/releases/download/v1.3.14/libimobiledevice.1.2.1-r1116-osx-x64.zip" "328e809dea350ae68fb644225bbf8469c0f0634b")
+        Echo "* iOS-OTA-Downgrader provides a copy of libimobiledevice and libirecovery by default"
+        Echo "* In case that problems occur, try installing them from Homebrew"
+        Echo "* The script will detect this automatically and will use the Homebrew versions of the tools"
+        Echo "* Install using this command: 'brew install libimobiledevice libirecovery'"
     
     else
         Error "Distro not detected/supported by the install script." "See the repo README for supported OS versions/distros"
@@ -138,9 +154,11 @@ InstallDepends() {
     fi
     
     if [[ ! -d ../resources/libimobiledevice_$platform ]]; then
+        Log "Downloading libimobiledevice..."
         SaveFile ${libimobiledevice[0]} libimobiledevice.zip ${libimobiledevice[1]}
         mkdir ../resources/libimobiledevice_$platform
-        unzip libimobiledevice.zip -d ../resources/libimobiledevice_$platform
+        Log "Extracting libimobiledevice..."
+        unzip -q libimobiledevice.zip -d ../resources/libimobiledevice_$platform
         chmod +x ../resources/libimobiledevice_$platform/*
     fi
     
